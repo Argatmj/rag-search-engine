@@ -3,7 +3,7 @@ import json
 import string
 import math
 from nltk.stem import PorterStemmer
-from inverted_index import InvertedIndex
+from inverted_index import InvertedIndex, BM25_K1, BM25_B
 
 def search_movies_by_keyword(keyword: str, stop_words: list[str], index: dict):
     movies_ids = list()
@@ -60,12 +60,23 @@ def main() -> None:
     tfidf_parser.add_argument("document_id", type=int, help="The document id to look for tf")
     tfidf_parser.add_argument("term", type=str, help="The term to look tf-idf for")
 
+    bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
+    bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
+
+    bm25_tf_parser = subparsers.add_parser("bm25tf", help="Get BM25 TF score for a given document ID and term")
+    bm25_tf_parser.add_argument("doc_id", type=int, help="Document ID")
+    bm25_tf_parser.add_argument("term", type=str, help="Term to get BM25 TF score for")
+    bm25_tf_parser.add_argument("k1", type=float, nargs='?', default=BM25_K1, help="Tunable BM25 K1 parameter")
+    bm25_tf_parser.add_argument("b", type=float, nargs='?', default=BM25_B, help="Tunable BM25 b parameter")
+
+    bm25search_parser = subparsers.add_parser("bm25search", help="Search movies using full BM25 scoring")
+    bm25search_parser.add_argument("query", type=str, help="Search query")
 
     args = parser.parse_args()
     inverted_index = InvertedIndex()
 
     try:
-        index, docmap, term_freq = inverted_index.load()
+        index, docmap, term_freq, doc_lengths = inverted_index.load()
     except FileNotFoundError:
         print("File not found")
         print("Rebuilding cache...")
@@ -81,14 +92,12 @@ def main() -> None:
             print(f"Searching for: {args.query}")
             
             m_file = open("./data/movies.json")
-
             movies = json.load(m_file)
 
             movies_id = search_movies_by_keyword(args.query, cleaned_stop_words, index)
             for ids in movies_id:
                 movies = docmap[ids]
                 print(f"{ids}: {movies['title']}")
-
         case "build":
             inverted_index.build_command()
         case "tf":
@@ -117,14 +126,25 @@ def main() -> None:
                 tf = term_freq[doc_id][term[0]]
 
             doc_count = len(docmap.keys())
-            match_count = len(index.get(term[0],0))
+            match_count = len(index.get(term[0],[]))
             idf = math.log((doc_count + 1) / (match_count + 1))
 
             tf_idf = tf * idf
 
             print(f"TF-IDF score of '{args.term}' in document '{doc_id}': {tf_idf:.2f}")
-
-            pass
+        case "bm25idf":
+            term = tokenizer(args.term, cleaned_stop_words)
+            bm25_idf = inverted_index.get_bm25_idf(term[0])
+            print(f"BM25 IDF score of '{args.term}': {bm25_idf:.2f}")
+        case "bm25tf":
+            bm25_tf = inverted_index.get_bm25_tf(args.doc_id, args.term, args.k1, args.b)
+            print(f"BM25 TF score of '{args.term}' in document '{args.doc_id}': {bm25_tf:.2f}")
+        case "bm25search":
+            query = args.query
+            bm25_scores = inverted_index.bm25_search(query)
+            for index, (movie_id, bm25_score) in enumerate(bm25_scores):
+                movie_title = docmap[movie_id]["title"]
+                print(f"{index+1}. ({movie_id}) {movie_title} - Score: {bm25_score:.2f}")
         case _:
             parser.print_help()
 
