@@ -58,11 +58,10 @@ def semantic_search(query: str, limit: int = 5):
         print(f"{index + 1}. {title} (score: {score})")
         print(f" {desc[:10]}\n")
 
-
 class SemanticSearch():
 
-    def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
+        self.model = SentenceTransformer(model_name)
         self.embeddings = None
         self.documents = None
         self.document_map = dict()
@@ -113,17 +112,3 @@ class SemanticSearch():
 
         sorted_score = sorted(score_list, key=lambda x: x[0], reverse=True)
         return sorted_score[:limit]
-
-
-
-
-
-
-
-
-        
-
-
-
-
-
