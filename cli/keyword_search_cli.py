@@ -3,7 +3,7 @@ import json
 import string
 import math
 from nltk.stem import PorterStemmer
-from inverted_index import InvertedIndex, BM25_K1, BM25_B
+from cli.lib.inverted_index import InvertedIndex, BM25_K1, BM25_B
 
 def search_movies_by_keyword(keyword: str, stop_words: list[str], index: dict):
     movies_ids = list()
