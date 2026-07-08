@@ -1,4 +1,5 @@
 from lib.hybrid_search import normalize, weighted_search, rrf_search
+from lib.llm import Model, spell_prompt, rewrite_prompt, enhanced_prompt
 import argparse
 
 def normalize_scores(scores: list):
@@ -23,6 +24,7 @@ def main() -> None:
     rrf_search_parser.add_argument("query", type=str, help="The query")
     rrf_search_parser.add_argument("-k", type=int, default=60, help="The weight in rrf score")
     rrf_search_parser.add_argument("--limit", type=int, default=5, help="The number of movies shown")
+    rrf_search_parser.add_argument("--enhance", type=str, choices=["spell","rewrite","expand"], help="Query enhancement method")
 
     args = parser.parse_args()
 
@@ -32,7 +34,26 @@ def main() -> None:
         case "weighted-search":
             weighted_search(args.query, args.alpha, args.limit)
         case "rrf-search":
-            rrf_search(args.query, args.k, args.limit)
+            query = args.query
+            if args.enhance:
+                model = Model()
+                prompt = None
+                
+                match args.enhance:
+                    case "spell":
+                        prompt = spell_prompt(args.query)
+                    case "rewrite":
+                        prompt = rewrite_prompt(args.query)
+                    case "expand":
+                        prompt = enhanced_prompt(args.query)
+                    case _:
+                        raise ValueError(f"{args.enhance} was not an option.")
+
+                enhanced_query = model.get_response(prompt)
+                query = enhanced_query[:]
+                print(f"Enhanced query ({args.enhance}): '{args.query}' -> '{enhanced_query}'\n")
+        
+            rrf_search(query, args.k, args.limit)
         case _:
             parser.print_help()
 
