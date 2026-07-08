@@ -1,7 +1,18 @@
 import os 
 import json
+import copy
+import time
+import re
+from enum import Enum
+from lib.llm import Model, individual_prompt, batch_prompt
 from lib.chunk_semantic_search import ChunkSemanticSearch
 from lib.inverted_index import InvertedIndex
+from sentence_transformers import CrossEncoder
+
+class Method(Enum):
+    INDIVIDUAL = 1
+    BATCH = 2
+    ENCODER = 3
 
 def normalize(scores: list):
     length = len(scores)
@@ -43,19 +54,68 @@ def weighted_search(query: str, alpha: float, limit: int = 5):
         print(f"  BM25: {score['keyword_score']:.3f}, Semantic: {score['semantic_score']:.3f}")
         print(f"  {score['document']['description'][:30]}...")
 
-def rrf_search(query: str, k: int, limit: int = 10):
+def parse_rerank_score(response: str) -> int:
+    match = re.search(r"\b(10|[0-9])\b", response)
+    if not match:
+        raise ValueError(f"Invalid rerank score response: {response!r}")
+    return int(match.group(1))
+
+def rrf_search(query: str, k: int, rerank_method, limit: int = 10):
     with open("./data/movies.json") as f:
         movies = json.load(f)
         movie_list = movies["movies"]
     hybird_search = HybridSearch(movie_list)
+    model = Model()
     scores = hybird_search.rrf_search(query, k, limit)
+    method = None
+
+    match rerank_method:
+        case "individual":
+            method = Method.INDIVIDUAL
+            for (_, rank) in scores:
+                prompt = individual_prompt(query, rank)
+                response = model.get_response(prompt)
+                score = parse_rerank_score(response)
+                rank["rerank_score"] = score
+                time.sleep(2)
+
+            reranked_scores = sorted(scores, key= lambda x: x[1]["rerank_score"], reverse=True)
+            scores = copy.deepcopy(reranked_scores)
+        case "batch":
+            method = Method.BATCH
+            doc_list = [rank["document"] for (_, rank) in scores]
+            prompt = batch_prompt(query,doc_list)
+            response = model.get_response(prompt)
+            ranks = json.loads(response) 
+            id_to_rank = {_id: rank + 1 for rank, _id in enumerate(ranks)}
+            
+            for (doc_id, rank) in scores:
+                rank["rerank_score"] = id_to_rank.get(doc_id, len(ranks) + 1)
+
+            reranked_scores = sorted(scores, key= lambda x: x[1]["rerank_score"])
+            scores = copy.deepcopy(reranked_scores)
+        case "cross_encoder":
+            method = Method.ENCODER
+            cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2")
+            for (_, rank) in scores:
+                pair = [query, f"{rank.get('document', {}).get('title','')} - {rank.get('document', '')}"]
+                score = cross_encoder.predict(pair)
+                rank["cross_encoder_score"] = score
+            
+            reranked_scores = sorted(scores, key= lambda x: x[1]["cross_encoder_score"], reverse=True)
+            scores = copy.deepcopy(reranked_scores)
 
     for idx, (_, rank) in enumerate(scores):
         print(f"{idx+1}. {rank['document']['title']}")
+        if method == Method.INDIVIDUAL:
+            print(f"  Re-rank Score: {rank['rerank_score']}/10")
+        elif method == Method.BATCH:
+            print(f"  Re-rank Rank: {rank['rerank_score']}")
+        elif method == Method.ENCODER:
+             print(f"  Cross Encoder Score: {rank['cross_encoder_score']}")
         print(f"  RRF Score: {rank['rrf_score']:.3f}")
         print(f"  BM25 Rank: {rank['bm25_rank']}, Semantic Rank: {rank['semantic_rank']}")
         print(f"  {rank['document']['description'][:30]}...")
-
 
 class HybridSearch:
     def __init__(self, documents: list[dict]) -> None:
