@@ -4,7 +4,7 @@ import copy
 import time
 import re
 from enum import Enum
-from lib.llm import Model, individual_prompt, batch_prompt
+from lib.llm import Model, individual_prompt, batch_prompt, evaluate_prompt
 from lib.chunk_semantic_search import ChunkSemanticSearch
 from lib.inverted_index import InvertedIndex
 from sentence_transformers import CrossEncoder
@@ -60,7 +60,7 @@ def parse_rerank_score(response: str) -> int:
         raise ValueError(f"Invalid rerank score response: {response!r}")
     return int(match.group(1))
 
-def rrf_search(query: str, k: int, rerank_method, limit: int = 10):
+def rrf_search(query: str, k: int, rerank_method, eval: bool, limit: int = 10):
     with open("./data/movies.json") as f:
         movies = json.load(f)
         movie_list = movies["movies"]
@@ -68,6 +68,16 @@ def rrf_search(query: str, k: int, rerank_method, limit: int = 10):
     model = Model()
     scores = hybird_search.rrf_search(query, k, limit)
     method = None
+
+    if eval:
+        titles = [rank["document"]["title"] for (doc_id, rank) in scores]
+        eval_prompt = evaluate_prompt(query, titles)
+        response = model.get_response(eval_prompt) 
+        eval_score = json.loads(response)
+
+        for index, score in enumerate(eval_score):
+            print(f"{index+1}. {titles[index]}: {score}/3")
+        return
 
     match rerank_method:
         case "individual":
