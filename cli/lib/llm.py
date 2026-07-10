@@ -166,6 +166,14 @@ Instructions:
 
 Answer:"""
 
+def image_prompt():
+    return f"""
+Given the included image and text query, rewrite the text query to improve search results from a movie database. Make sure to:
+- Synthesize visual and textual information
+- Focus on movie-specific details (actors, scenes, style, etc.)
+- Return only the rewritten query, without any additional commentary
+"""
+
 class Model():
 
     def __init__(self):
@@ -185,5 +193,13 @@ class Model():
         ]
         response = self.client.chat.completions.create(model="openai/gpt-oss-120b", messages=messages)
         return response.choices[0].message.content
+    
+    def get_response_multimodal(self, messages):
+        response = self.client.chat.completions.create(model="openrouter/free", messages=messages)
+        content = response.choices[0].message.content
+        print(f"Rewritten query: {content.strip()}")
+        if response.usage is not None:
+            print(f"Total tokens: {response.usage.total_tokens}")
+
 
 
